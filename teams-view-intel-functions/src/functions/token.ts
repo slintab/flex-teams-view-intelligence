@@ -1,0 +1,59 @@
+import "@twilio-labs/serverless-runtime-types";
+import {
+  HandlerFn,
+  Callback,
+  functionValidator as TokenValidator,
+} from "twilio-flex-token-validator";
+
+const { createResponse, createError } = require(
+  Runtime.getFunctions()["common/utils"].path,
+);
+
+type MyEvent = {
+  identity?: string;
+  TokenResult?: object;
+};
+
+type MyContext = {
+  ACCOUNT_SID: string;
+  AUTH_TOKEN: string;
+  API_KEY?: string;
+  API_SECRET?: string;
+  SYNC_SERVICE_SID?: string;
+};
+
+export const handler: HandlerFn = TokenValidator(async function (
+  context: MyContext,
+  event: MyEvent,
+  callback: Callback,
+) {
+  const { ACCOUNT_SID, API_KEY, API_SECRET, SYNC_SERVICE_SID } = context;
+  const { identity } = event;
+
+  if (!(API_KEY && API_SECRET && SYNC_SERVICE_SID)) {
+    return createError(Error("Internal error"), 500, callback);
+  }
+
+  if (!identity) {
+    return createError(Error("Missing parameters"), 400, callback);
+  }
+
+  const AccessToken = Twilio.jwt.AccessToken;
+  const SyncGrant = AccessToken.SyncGrant;
+
+  try {
+    const syncGrant = new SyncGrant({
+      serviceSid: SYNC_SERVICE_SID,
+    });
+
+    const accessToken = new AccessToken(ACCOUNT_SID, API_KEY, API_SECRET, {
+      identity: identity,
+    });
+    accessToken.addGrant(syncGrant);
+
+    return createResponse({ token: accessToken.toJwt() }, callback);
+  } catch (err) {
+    console.error(err);
+    return createError(Error("Internal error"), 500, callback);
+  }
+});
